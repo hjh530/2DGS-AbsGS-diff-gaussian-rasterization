@@ -269,7 +269,10 @@ renderCUDA(
 	uint32_t* __restrict__ n_contrib,
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
-	float* __restrict__ out_others)
+	float* __restrict__ out_others,
+	float* __restrict__ transmittance,
+	int* __restrict__ num_covered_pixels,
+	bool record_transmittance)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -377,9 +380,14 @@ renderCUDA(
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
 			float alpha = min(0.99f, opa * exp(power));
+			if (record_transmittance){
+				atomicAdd(&transmittance[collected_id[j]], T * alpha);
+				atomicAdd(&num_covered_pixels[collected_id[j]], 1);
+			}
 			if (alpha < 1.0f / 255.0f)
 				continue;
 			float test_T = T * (1 - alpha);
+
 			if (test_T < 0.0001f)
 			{
 				done = true;
@@ -455,7 +463,10 @@ void FORWARD::render(
 	uint32_t* n_contrib,
 	const float* bg_color,
 	float* out_color,
-	float* out_others)
+	float* out_others,
+	float* transmittance,
+	int* num_covered_pixels,
+	bool record_transmittance)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -471,7 +482,10 @@ void FORWARD::render(
 		n_contrib,
 		bg_color,
 		out_color,
-		out_others);
+		out_others,
+		transmittance,
+		num_covered_pixels,
+		record_transmittance);
 }
 
 void FORWARD::preprocess(int P, int D, int M,
